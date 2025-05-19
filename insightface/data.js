@@ -2,10 +2,8 @@ import path from 'path';
 import fs from 'fs';
 
 export function getObject(name) {
-    const isPackaged = typeof process.pkg !== 'undefined';
-    const baseDir = isPackaged
-        ? path.dirname(process.execPath)
-        : "C:/Users/ytalo/deepfake/src/insightface";
+    //const isPackaged = typeof process.pkg !== 'undefined';
+    const baseDir = path.dirname(process.execPath)
 
     const objectsDir = path.join(baseDir, 'objects');
 
