@@ -1,0 +1,32 @@
+{
+  "name": "deepfake",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.9.0",
+    "glob": "^11.0.2",
+    "mathjs": "^14.4.0",
+    "ml-matrix": "^6.12.1",
+    "ml-pca": "^4.1.1",
+    "ndarray": "^1.0.19",
+    "ndarray-ops": "^1.2.2",
+    "numeric": "^1.2.6",
+    "onnxruntime-node": "^1.22.0-dev.20250418-c19a49615b",
+    "protobufjs": "^7.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^22.15.3"
+  }
+}
