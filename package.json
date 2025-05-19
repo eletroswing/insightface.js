@@ -1,14 +1,11 @@
 {
-  "name": "deepfake",
+  "name": "insightface.js",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node src/index.js"
-  },
+  "description": "insightface built for js",
+  "main": "insightface/face_analysis.js",
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "adm-zip": "^0.5.16",
