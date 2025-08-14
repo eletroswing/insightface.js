@@ -3,11 +3,11 @@ import * as canvas from 'canvas';
 import "onnxruntime-node";
 import path from "path";
 
-import { getModel } from "@/insightface/model_zoo.js";
-import { ensureAvailable } from "@/insightface/utils.js";
-import { Face } from "@/insightface/commom.js";
-import {OpenCv} from "@/opencv/opencv.js";
-import { RetinaFace } from "@/insightface/retinaface.js";
+import { getModel } from "./model_zoo.js";
+import { ensureAvailable } from "./utils.js";
+import { Face } from "./commom.js";
+import {OpenCv} from "./../opencv/opencv.js";
+import { RetinaFace } from "./retinaface.js";
 
 export class FaceAnalysis {
     name: string;
@@ -39,7 +39,6 @@ export class FaceAnalysis {
             } else if (this.allowedModules && !this.allowedModules.includes(model.taskname)) {
                 console.log('model ignored:', onnxFile, model.taskname);
             } else if (!this.models[model.taskname]) {
-                console.log('find model:', onnxFile, model.taskname,  model.inputShape, model.inputMean, model.inputStd);
                 this.models[model.taskname] = model;
             } else {
                 console.log('duplicated model task type, ignoring:', onnxFile, model.taskname);

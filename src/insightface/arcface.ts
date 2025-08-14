@@ -3,9 +3,10 @@ import { Canvas, createCanvas, Image } from 'canvas';
 import * as math from 'mathjs';
 import protobuf from 'protobufjs';
 import fs from 'fs';
+import path from 'path'
 
-import { normCrop, Point2D, Tensor, tensorTo2DArray } from '@/insightface/utils.js';
-import { Face } from '@/insightface/commom.js';
+import { normCrop, Point2D, Tensor, tensorTo2DArray } from './utils.js';
+import { Face } from './commom.js';
 
 export class ArcFaceONNX {
   modelFile: string;
@@ -35,7 +36,7 @@ export class ArcFaceONNX {
     this.inputSize = [inputShape[2], inputShape[3]]
     this.inputShape = inputShape;
 
-    const root = await protobuf.load("./src/onnx/onnx.proto");
+    const root = await protobuf.load(path.join(__dirname, "./../onnx/onnx.proto"));
     const onnxModel = root.lookupType("onnx.ModelProto");
 
     const modelBuffer = fs.readFileSync(this.modelFile);

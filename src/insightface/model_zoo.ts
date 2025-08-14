@@ -3,11 +3,11 @@ import path from 'path';
 import os from 'os';
 import * as glob from 'glob';
 import ort from 'onnxruntime-node';
-import { downloadOnnx } from '@/insightface/utils.js';
-import { RetinaFace } from '@/insightface/retinaface.js';
-import { Landmark } from '@/insightface/landmark.js';
-import { Attribute } from '@/insightface/attribute.js';
-import { ArcFaceONNX } from '@/insightface/arcface.js';
+import { downloadOnnx } from './utils.js';
+import { RetinaFace } from './retinaface.js';
+import { Landmark } from './landmark.js';
+import { Attribute } from './attribute.js';
+import { ArcFaceONNX } from './arcface.js';
 
 function expandHome(filePath: string): string {
   if (filePath.startsWith('~')) {

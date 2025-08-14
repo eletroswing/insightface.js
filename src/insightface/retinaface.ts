@@ -1,7 +1,7 @@
 import ort, { InferenceSession } from 'onnxruntime-node';
 import { createCanvas } from 'canvas';
 import * as math from 'mathjs';
-import { performListMultiplication, Tensor, tensorTo2DArray } from '@/insightface/utils.js';
+import { performListMultiplication, Tensor, tensorTo2DArray } from './utils.js';
 import { Image } from 'canvas';
 
 function distance2kps(points: number[][], distance: number[][], maxShape = null): number[][] {

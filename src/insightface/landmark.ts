@@ -5,11 +5,12 @@ import { Matrix as MatrixType } from 'ml-matrix';
 import protobuf from 'protobufjs';
 import fs from 'fs';
 import { Canvas } from 'canvas';
+import path from 'path';
 
-import { estimateAffineMatrix3D23D, P2sRt, matrix2angle } from '@/insightface/utils.js';
-import { transform, transPoints, tensorTo2DArray, Tensor, Point2D } from '@/insightface/utils.js';
-import { getObject } from '@/insightface/data.js';
-import { Face } from '@/insightface/commom.js';
+import { estimateAffineMatrix3D23D, P2sRt, matrix2angle } from './utils.js';
+import { transform, transPoints, tensorTo2DArray, Tensor, Point2D } from './utils.js';
+import { getObject } from './data.js';
+import { Face } from './commom.js';
 
 export class Landmark {
     modelFile: string;
@@ -42,7 +43,7 @@ export class Landmark {
         this.inputName = input;
         this.outputNames = [output];
 
-        const root = await protobuf.load("./src/onnx/onnx.proto");
+        const root = await protobuf.load(path.join(__dirname, "./../onnx/onnx.proto"));
         const onnxModel = root.lookupType("onnx.ModelProto");
 
         const modelBuffer = fs.readFileSync(this.modelFile);
@@ -97,7 +98,7 @@ export class Landmark {
         const scale = this.inputSize[3] / (Math.max(w, h) * 1.5);
         const rotate = 0;
 
-        const [alignedCanvas, M] = transform(imgCanvas as unknown as {img: Canvas}, center as unknown as [number, number], this.inputSize[3], scale, rotate);
+        const [alignedCanvas, M] = transform(imgCanvas as unknown as { img: Canvas }, center as unknown as [number, number], this.inputSize[3], scale, rotate);
         const inputTensor = this.canvasToTensor(alignedCanvas);
 
         const feeds = { [this.inputName]: inputTensor };
@@ -124,10 +125,10 @@ export class Landmark {
             return row;
         }) as unknown as number[];
 
-        
+
         pred = (pred as unknown as number[][]).map(row => {
             row[0] = row[0] - this.inputSize[3] / 2.5
-            row[1] = row[1] 
+            row[1] = row[1]
             return row;
         }) as unknown as number[];
 
@@ -140,14 +141,14 @@ export class Landmark {
         const IM = invertAffineTransform(M);
         var aligned = transPoints(pred as unknown as Point2D[], IM);
         aligned = aligned.map(row => {
-            row[0] = imgCanvas.width - row[0]; 
+            row[0] = imgCanvas.width - row[0];
             return row;
         });
 
         (face as unknown as { [key: string]: any })[this.taskname] = aligned;
         if (this.requirePose) {
             const P = estimateAffineMatrix3D23D(this.meanLmk as unknown as number[][], aligned as unknown as number[][]);
-            const { R } = P2sRt(P as unknown as MatrixType );
+            const { R } = P2sRt(P as unknown as MatrixType);
             const [rx, ry, rz] = matrix2angle(R);
             (face as unknown as { pose: [number, number, number] }).pose = [rx, ry, rz];
         }
@@ -156,7 +157,7 @@ export class Landmark {
     }
 
     async prepare(ctxId: number): Promise<void> {
-        
+
     }
 
     canvasToTensor(img: Canvas): Tensor {
@@ -165,9 +166,9 @@ export class Landmark {
         const data = ctx.getImageData(0, 0, width, height).data;
         const floatArray = new Float32Array(width * height * 3);
         for (let i = 0; i < width * height; i++) {
-            floatArray[i * 3] = data[i * 4];     
-            floatArray[i * 3 + 1] = data[i * 4 + 1]; 
-            floatArray[i * 3 + 2] = data[i * 4 + 2]; 
+            floatArray[i * 3] = data[i * 4];
+            floatArray[i * 3 + 1] = data[i * 4 + 1];
+            floatArray[i * 3 + 2] = data[i * 4 + 2];
         }
         return new ort.Tensor('float32', floatArray, [1, 3, height, width]) as unknown as Tensor;
     }

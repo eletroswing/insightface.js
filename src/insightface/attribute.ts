@@ -1,9 +1,10 @@
 import ort from 'onnxruntime-node';
 import protobuf from 'protobufjs';
 import fs from 'fs';
+import path from 'path';
 
-import { transform, tensorTo2DArray, Tensor } from '@/insightface/utils.js';
-import { Face } from '@/insightface/commom.js';
+import { transform, tensorTo2DArray, Tensor } from './utils.js';
+import { Face } from './commom.js';
 
 export class Attribute {
   modelFile: string;
@@ -32,7 +33,7 @@ export class Attribute {
     this.inputShape = (this.session.inputMetadata[0] as unknown as { shape: number[] }).shape
     this.inputSize = this.inputShape
 
-    const root = await protobuf.load("./src/onnx/onnx.proto");
+    const root = await protobuf.load(path.join(__dirname, "./../onnx/onnx.proto"));
     const onnxModel = root.lookupType("onnx.ModelProto");
 
     const modelBuffer = fs.readFileSync(this.modelFile);
@@ -72,7 +73,7 @@ export class Attribute {
   }
 
   async prepare(ctxId: number): Promise<void> {
-    
+
   }
 
   async get(imgCanvas: any, face: Face): Promise<number[] | [number, number]> {
@@ -107,9 +108,9 @@ export class Attribute {
     const data = ctx.getImageData(0, 0, width, height).data;
     const floatArray = new Float32Array(width * height * 3);
     for (let i = 0; i < width * height; i++) {
-      floatArray[i * 3] = data[i * 4];     
-      floatArray[i * 3 + 1] = data[i * 4 + 1]; 
-      floatArray[i * 3 + 2] = data[i * 4 + 2]; 
+      floatArray[i * 3] = data[i * 4];
+      floatArray[i * 3 + 1] = data[i * 4 + 1];
+      floatArray[i * 3 + 2] = data[i * 4 + 2];
     }
     return new ort.Tensor('float32', floatArray, [1, 3, height, width]) as unknown as Tensor;
   }

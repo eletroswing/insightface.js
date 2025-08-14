@@ -5,7 +5,7 @@ export function getObject(name: string): any | null {
     const isPackaged = typeof (process as any).pkg !== 'undefined';
     const baseDir = isPackaged
         ? path.dirname(process.execPath)
-        : "C:/Users/ytalo/deepfake/src/insightface";
+        : __dirname;
 
     const objectsDir = path.join(baseDir, 'objects');
 
