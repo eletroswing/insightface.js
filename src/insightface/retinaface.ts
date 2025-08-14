@@ -1,9 +1,10 @@
-import ort from 'onnxruntime-node';
-import { createCanvas, loadImage } from 'canvas';
+import ort, { InferenceSession } from 'onnxruntime-node';
+import { createCanvas } from 'canvas';
 import * as math from 'mathjs';
-import { performListMultiplication, tensorTo2DArray } from './utils.js';
+import { performListMultiplication, Tensor, tensorTo2DArray } from '@/insightface/utils.js';
+import { Image } from 'canvas';
 
-function distance2kps(points, distance, maxShape = null) {
+function distance2kps(points: number[][], distance: number[][], maxShape = null): number[][] {
   const n = points.length;
   const numKps = distance[0].length / 2;
   const preds = [];
@@ -41,16 +42,7 @@ function distance2kps(points, distance, maxShape = null) {
   return result;
 }
 
-function softmax(z) {
-  const s = math.max(z, 1);
-  const e_x = z.map((row, i) =>
-    row.map((val, j) => Math.exp(val - s[i]))
-  );
-  const div = e_x.map(row => math.sum(row));
-  return e_x.map((row, i) => row.map(val => val / div[i]));
-}
-
-async function distance2bbox(points, distance, maxShape = null) {
+async function distance2bbox(points: number[][], distance: number[][], maxShape = null): Promise<number[][]> {
   const x1 = points.map((p, i) => p[0] - distance[i][0]);
   const y1 = points.map((p, i) => p[1] - distance[i][1]);
   const x2 = points.map((p, i) => p[0] + distance[i][2]);
@@ -59,8 +51,8 @@ async function distance2bbox(points, distance, maxShape = null) {
   let x1c = x1, y1c = y1, x2c = x2, y2c = y2;
 
   if (maxShape) {
-    const [height, width] = maxShape;
-    const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+    const [height, width] = maxShape as [number, number];
+    const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
 
     x1c = x1.map(v => clamp(v, 0, width));
     y1c = y1.map(v => clamp(v, 0, height));
@@ -72,23 +64,46 @@ async function distance2bbox(points, distance, maxShape = null) {
   return bboxes;
 }
 
-// Simples alternativa de resize com Canvas
-async function resizeImage(img, targetWidth, targetHeight) {
+
+async function resizeImage(img: Image, targetWidth: number, targetHeight: number): Promise<Float32Array> {
   const canvas = createCanvas(targetWidth, targetHeight);
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
   const data = ctx.getImageData(0, 0, targetWidth, targetHeight).data;
   const floatArray = new Float32Array(targetWidth * targetHeight * 3);
   for (let i = 0; i < targetWidth * targetHeight; i++) {
-    floatArray[i * 3] = data[i * 4];     // R
-    floatArray[i * 3 + 1] = data[i * 4 + 1]; // G
-    floatArray[i * 3 + 2] = data[i * 4 + 2]; // B
+    floatArray[i * 3] = data[i * 4];     
+    floatArray[i * 3 + 1] = data[i * 4 + 1]; 
+    floatArray[i * 3 + 2] = data[i * 4 + 2]; 
   }
   return floatArray;
 }
 
+export interface DetectResult {
+    bboxes: number[][];
+    kpss: number[][][] | null;
+}
+
 export class RetinaFace {
-  constructor(modelPath) {
+  modelPath: string;
+  session: InferenceSession | null;
+  inputMean: number;
+  inputStd: number;
+  detThresh: number;
+  nmsThresh: number;
+  centerCache: Record<string, number[][]>;
+  taskname: string;
+  inputName!: string;
+  outputNames: string[];
+  inputSize!: [number, number] | null;
+  inputShape!: number[];
+  useKps!: boolean;
+  _anchorRatio!: number;
+  _numAnchors!: number;
+  fmc!: number; 
+  _featStrideFpn!: number[];
+
+  constructor(modelPath: string) {
     this.modelPath = modelPath;
     this.session = null;
     this.inputMean = 127.5;
@@ -97,21 +112,22 @@ export class RetinaFace {
     this.nmsThresh = 0.4;
     this.centerCache = {};
     this.taskname = 'detection';
+    this.outputNames = [];
   }
 
-  async loadModel() {
+  async loadModel(): Promise<void> {
     this.session = await ort.InferenceSession.create(this.modelPath);
     const input = this.session.inputNames[0];
     const output = this.session.outputNames;
     this.inputName = input;
-    this.outputNames = output;
+    this.outputNames = output as string[];
 
     this._initVars();
   }
 
-  _initVars() {
-    const inputCfg = this.session.inputMetadata[0];
-    const inputShape = inputCfg.shape;
+  _initVars(): void {
+    const inputCfg = this.session!.inputMetadata[0];
+    const inputShape = (inputCfg as unknown as { shape: number[] }).shape;
 
     if (typeof inputShape[2] === 'string') {
       this.inputSize = null;
@@ -121,10 +137,10 @@ export class RetinaFace {
 
     const inputName = inputCfg.name;
     this.inputShape = inputShape;
-    const outputs = this.session.outputNames;
+    const outputs = this.session!.outputNames;
 
     this.inputName = inputName;
-    this.outputNames = outputs;
+    this.outputNames = outputs as string[];
     this.inputMean = 127.5;
     this.inputStd = 128.0;
 
@@ -152,31 +168,13 @@ export class RetinaFace {
     }
   }
 
-  async prepare(ctxId, detSize = null, detThresh = null) {
+  async prepare(ctxId: number, detSize: number[] | null = null, detThresh: number | null = null): Promise<void> {
     if (detThresh) {
       this.detThresh = detThresh
     }
   }
 
-  async detect2(imagePath) {
-    const img = await loadImage(imagePath);
-    const width = 640;
-    const height = 640;
-
-    const input = await resizeImage(img, width, height);
-    const inputTensor = new ort.Tensor('float32', input, [1, 3, height, width]);
-
-    const feeds = {};
-    feeds[this.inputName] = inputTensor;
-
-    const results = await this.session.run(feeds);
-
-    const matrix = tensorTo2DArray(results['500']);
-
-    return results;
-  }
-
-  async detect(img, max_num = 0, metric = 'default') {
+  async detect(img: any, max_num = 0, metric = 'default'): Promise<DetectResult> {
     const scores_list = []
     const bboxes_list = []
     const kpss_list = []
@@ -186,7 +184,7 @@ export class RetinaFace {
     const blob = img.blobFromImage(1.0 / this.inputStd, [width, height], [this.inputMean, this.inputMean, this.inputMean], true);
     const inputTensor = new ort.Tensor('float32', blob.blob, [1, 3, height, width]);
 
-    const net_outsRaw = await this.session.run({
+    const net_outsRaw = await this.session!.run({
       [this.inputName]: inputTensor,
     });
 
@@ -194,12 +192,12 @@ export class RetinaFace {
     const fmc = this.fmc;
 
     for (const [idx, stride] of this._featStrideFpn.entries()) {
-      const scores = tensorTo2DArray(net_outs[idx])
-      let bbox_preds = tensorTo2DArray(net_outs[idx + fmc])
+      const scores = tensorTo2DArray(net_outs[idx] as unknown as Tensor)
+      let bbox_preds = tensorTo2DArray(net_outs[idx + fmc] as unknown as Tensor)
       bbox_preds = performListMultiplication(bbox_preds, stride)
 
       let kps_preds = null
-      if (this.useKps) kps_preds = performListMultiplication(tensorTo2DArray(net_outs[idx + fmc * 2]), stride)
+      if (this.useKps) kps_preds = performListMultiplication(tensorTo2DArray(net_outs[idx + fmc * 2] as unknown as Tensor), stride)
 
       let theight = Math.floor(height / stride)
       let twidth = Math.floor(width / stride)
@@ -208,8 +206,8 @@ export class RetinaFace {
       let key = [theight, twidth, stride]
 
       var anchorCenters = []
-      if (key in this.centerCache) {
-        anchorCenters = this.centerCache[key]
+      if ((key as unknown as string) in this.centerCache) {
+        anchorCenters = this.centerCache[key as unknown as string]
       } else {
         for (let y = 0; y < theight; y++) {
           const row = [];
@@ -234,7 +232,7 @@ export class RetinaFace {
         }
 
         if (Object.keys(this.centerCache).length < 100) {
-          this.centerCache[key] = anchorCenters;
+          this.centerCache[key as unknown as string] = anchorCenters;
         }
       }
 
@@ -250,16 +248,16 @@ export class RetinaFace {
       bboxes_list.push(pos_bboxes || [])
 
       if (this.useKps) {
-        let kpss = distance2kps(anchorCenters, kps_preds)
-        kpss = math.reshape(kpss, [math.size(kpss)[0], -1, 2])
+        let kpss = distance2kps(anchorCenters, kps_preds as unknown as number[][])
+        kpss = math.reshape(kpss, [(math.size(kpss) as unknown as number[])[0], -1, 2])
         let pos_kpss = pos_inds.map(pos => kpss[pos])
         kpss_list.push(pos_kpss || [])
       }
     }
 
-    /////////////////////////
-    //end of forward pass
-    ///////////////////
+    
+    
+    
     let det_scale = img.height / img.width
     const scores = scores_list.flat();
     const scores_ravel = scores.flat();
@@ -267,32 +265,32 @@ export class RetinaFace {
 
     let bboxes = math.divide(bboxes_list.flat(), det_scale);
 
-    let kpss = null;
+    let kpss: number[][][] | null = null;
 
     if (this.useKps) {
       const filteredKpssList = kpss_list.filter(kps => kps.length > 0);
-      kpss = math.divide(math.concat(...filteredKpssList, 0), det_scale);
+      kpss = math.divide(math.concat(...filteredKpssList, 0), det_scale) as unknown as number[][][];
     }
 
 
-    let pre_det = math.concat(bboxes, scores, 1);
-    pre_det = order.map(i => pre_det[i]);
+    let pre_det = math.concat(bboxes as unknown as number[], scores as unknown as number[], 1);
+    pre_det = order.map(i => (pre_det as unknown as number[])[i]);
 
-    const keep = this.nms(pre_det);
+    const keep = this.nms(pre_det as unknown as number[][]);
     let det = keep.map(i => pre_det[i]);
 
     if (this.useKps) {
-      kpss = order.map(i => kpss[i]);
-      kpss = keep.map(i => kpss[i]);
+      kpss = order.map(i => (kpss as unknown as number[][])[i]) as unknown as number[][][];
+      kpss = keep.map(i => (kpss as unknown as number[][])[i]) as unknown as number[][][];
     } else {
       kpss = null;
     }
 
     if (max_num > 0 && det.length > max_num) {
-      const area = det.map(d => (d[2] - d[0]) * (d[3] - d[1]));
+      const area = (det as unknown as number[][]).map(d => (d[2] - d[0]) * (d[3] - d[1]));
 
       const img_center = [img.height / 2, img.width / 2];
-      const offsets = det.map(d => [
+      const offsets = (det as unknown as number[][]).map(d => [
         (d[0] + d[2]) / 2 - img_center[1],
         (d[1] + d[3]) / 2 - img_center[0],
       ]);
@@ -305,18 +303,17 @@ export class RetinaFace {
       const bindex = [...values.keys()].sort((a, b) => values[b] - values[a]).slice(0, max_num);
       det = bindex.map(i => det[i]);
       if (kpss !== null) {
-        kpss = bindex.map(i => kpss[i]);
+        kpss = bindex.map(i => (kpss as unknown as number[][])[i]) as unknown as number[][][];
       }
     }
 
     return {
-      bboxes: det,
+      bboxes: det as unknown as number[][],
       kpss: kpss,
     };
   }
 
-
-  nms(dets) {
+  nms(dets: number[][]): number[] {
     const thresh = this.nmsThresh;
     const x1 = dets.map(det => det[0]);
     const y1 = dets.map(det => det[1]);
@@ -347,15 +344,15 @@ export class RetinaFace {
       o = order.shift();
       const yy2 = order.map(index => Math.max(y2[i], y2[index]));
 
-      const w = xx2.map((val, i) => Math.max(0.0, val - xx1[i] + 1));
-      const h = yy2.map((val, i) => Math.max(0.0, val - yy1[i] + 1));
+      const w = xx2.map((val, i) => Math.max(0.0, val - xx1[i] + 1)) as unknown as number;
+      const h = yy2.map((val, i) => Math.max(0.0, val - yy1[i] + 1)) as unknown as number;
 
       const inter = w * h;
 
       o = order.shift();
       const ovr = order.map((_, idx) => {
-        const j = order[idx + 1]; // índice real
-        const inter_ij = inter[idx];
+        const j = order[idx + 1]; 
+        const inter_ij = (inter as unknown as number[])[idx];
         return inter_ij / (areas[i] + areas[j] - inter_ij);
       });
 

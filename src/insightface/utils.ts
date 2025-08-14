@@ -3,19 +3,18 @@ import path from 'path';
 import os from 'os';
 import AdmZip from 'adm-zip';
 import axios from 'axios';
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas, Canvas } from 'canvas';
 import * as math from 'mathjs';
 import { Matrix, SingularValueDecomposition } from 'ml-matrix';
-import { OpenCv } from '../opencv/opencv.js';
+
 export const DEFAULT_MP_NAME = 'buffalo_l';
 const BASE_REPO_URL = 'https://github.com/deepinsight/insightface/releases/download/v0.7'
-import numeric from 'numeric';
 
-export function ensureAvailable(subDir, name, root = '~/.insightface') {
+export async function ensureAvailable(subDir: string, name: string, root: string = '~/.insightface'): Promise<string> {
   return downloadOnnx(subDir, name, false, root);
 }
 
-export async function downloadOnnx(subDir, name, force = false, root = '~/.insightface') {
+export async function downloadOnnx(subDir: string, name: string, force: boolean = false, root: string = '~/.insightface'): Promise<string> {
   const _root = path.resolve(os.homedir(), root.replace(/^~\//, ''));
   const dirPath = path.join(_root, subDir, name);
 
@@ -41,7 +40,7 @@ export async function downloadOnnx(subDir, name, force = false, root = '~/.insig
   return dirPath;
 }
 
-async function d(url, filePath) {
+async function d(url: string, filePath: string): Promise<void> {
   const writer = fs.createWriteStream(filePath);
 
   try {
@@ -57,19 +56,19 @@ async function d(url, filePath) {
 
     response.data.pipe(writer);
 
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(filePath));
+    return new Promise<void>((resolve, reject) => {
+      writer.on('finish', () => resolve());
       writer.on('error', (err) => {
         fs.unlink(filePath, () => reject(err));
       });
     });
   } catch (err) {
-    fs.unlink(filePath, () => { }); // remove o arquivo se existir
+    fs.unlink(filePath, () => { }); 
     throw err;
   }
 }
 
-export function downloadFile(url, filePath, overwrite = false) {
+export function downloadFile(url: string, filePath: string, overwrite: boolean = false): Promise<string> {
   return new Promise(async (resolve, reject) => {
     if (fs.existsSync(filePath) && !overwrite) {
       return resolve(filePath);
@@ -95,8 +94,18 @@ const arcface_dst = [
   [41.5493, 92.3655], [70.7299, 92.2041]
 ];
 
+export interface Point2D {
+    0: number;
+    1: number;
+}
 
-export function estimateNorm(lmk, imageSize = 112, mode = 'arcface') {
+export interface Point3D {
+    0: number;
+    1: number;
+    2: number;
+}
+
+export function estimateNorm(lmk: Point2D[][], imageSize: number = 112, mode: string = 'arcface'): Matrix {
   if (lmk.length !== 5 || lmk[0].length !== 2) {
     throw new Error('Invalid landmark shape');
   }
@@ -117,22 +126,22 @@ export function estimateNorm(lmk, imageSize = 112, mode = 'arcface') {
 
   const dst = arcface_dst.map(row => row.map((val, idx) => val * ratio + (idx === 0 ? diffX : 0)));
 
-  // Calculando a transformação de similaridade manualmente
-  const src = lmk;
+  
+  const src: number[][] = lmk as unknown as number[][];
 
-  const meanSrc = math.mean(src, 0); // Média dos pontos de origem
-  const meanDst = math.mean(dst, 0); // Média dos pontos de destino
+  const meanSrc = math.mean(src, 0); 
+  const meanDst = math.mean(dst, 0); 
 
-  const srcCentered = src.map(point => [point[0] - meanSrc[0], point[1] - meanSrc[1]]);
-  const dstCentered = dst.map(point => [point[0] - meanDst[0], point[1] - meanDst[1]]);
+  const srcCentered = src.map(point => [point[0] - (meanSrc as unknown as number[])[0], point[1] - (meanSrc as unknown as number[])[1]]);
+  const dstCentered = dst.map(point => [point[0] - (meanDst as unknown as number[])[0], point[1] - (meanDst as unknown as number[])[1]]);
 
   const srcMatrix = new Matrix(srcCentered);
   const dstMatrix = new Matrix(dstCentered);
 
-  const H = dstMatrix.transpose().mmul(srcMatrix); // H = dst' * src
+  const H = dstMatrix.transpose().mmul(srcMatrix); 
 
-  // Usando ml-matrix para decomposição SVD
-  const svd = new SingularValueDecomposition(H);
+  
+  const svd = new SingularValueDecomposition(H) as unknown as { U: Matrix, V: Matrix, S: Matrix };
   const U = svd.U;
   const V = svd.V;
   const S = Matrix.eye(U.rows);
@@ -141,8 +150,8 @@ export function estimateNorm(lmk, imageSize = 112, mode = 'arcface') {
   return M;
 }
 
-function estimateSimilarityTransform(srcPoints, dstPoints) {
-  const centroid = (points) => {
+function estimateSimilarityTransform(srcPoints: number[][], dstPoints: number[][]): number[][] {
+  const centroid = (points: number[][]) => {
     const n = points.length;
     const sum = points.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0,0]);
     return [sum[0]/n, sum[1]/n];
@@ -151,11 +160,11 @@ function estimateSimilarityTransform(srcPoints, dstPoints) {
   const srcCentroid = centroid(srcPoints);
   const dstCentroid = centroid(dstPoints);
 
-  // Subtrair centroides para centralizar pontos
+  
   const srcCentered = srcPoints.map(p => [p[0] - srcCentroid[0], p[1] - srcCentroid[1]]);
   const dstCentered = dstPoints.map(p => [p[0] - dstCentroid[0], p[1] - dstCentroid[1]]);
 
-  // Calcular variância e covariância
+  
   let srcVar = 0;
   let cov = [[0,0],[0,0]];
   for (let i = 0; i < srcPoints.length; i++) {
@@ -167,36 +176,36 @@ function estimateSimilarityTransform(srcPoints, dstPoints) {
     cov[1][1] += dstCentered[i][1]*srcCentered[i][1];
   }
 
-  // SVD da covariância para obter rotação
-  // Como não temos SVD nativo, aqui fazemos o método simplificado para 2x2 matriz:
-  // Se quiser mais exatidão, use biblioteca como numeric.js ou svd-js
+  
+  
+  
 
-  // Calcula determinante e traço para achar ângulo da rotação:
-  // Formula da rotação: R = cov * (cov^T)^-1 com constraints de ortogonalidade
-  // Para simplicidade, calcularemos ângulo diretamente:
+  
+  
+  
 
   const a = cov[0][0];
   const b = cov[0][1];
   const c = cov[1][0];
   const d = cov[1][1];
 
-  // Estima rotação:
-  // Usamos a propriedade da matriz de rotação que R = [[cos, -sin],[sin, cos]]
-  // Uma aproximação para cos(θ) e sin(θ) pode ser:
+  
+  
+  
   const norm1 = Math.sqrt(a*a + c*c);
   const norm2 = Math.sqrt(b*b + d*d);
 
   const cosTheta = (a + d) / (norm1 + norm2);
   const sinTheta = (c - b) / (norm1 + norm2);
 
-  // Estima escala
+  
   const scale = (a*cosTheta + b*sinTheta + c*sinTheta + d*cosTheta) / srcVar;
   
-  // Estima translação
+  
   const tx = dstCentroid[0] - scale * (cosTheta * srcCentroid[0] + sinTheta * srcCentroid[1]);
   const ty = dstCentroid[1] - scale * (cosTheta * srcCentroid[0] + sinTheta * srcCentroid[1]);
 
-  // Matriz 2x3
+  
   const M = [
     [scale*cosTheta, -scale*sinTheta, tx],
     [scale*sinTheta,  scale*cosTheta, ty*2]
@@ -205,7 +214,7 @@ function estimateSimilarityTransform(srcPoints, dstPoints) {
   return M;
 }
 
-export function estimateNormlegacy(lmk, imageSize = 112, mode = 'arcface') {
+export function estimateNormlegacy(lmk: Point2D[][], imageSize: number = 112, mode: string = 'arcface'): number[][] {
   if (lmk.length !== 5 || lmk[0].length !== 2) {
     throw new Error('Invalid landmark shape');
   }
@@ -227,12 +236,12 @@ export function estimateNormlegacy(lmk, imageSize = 112, mode = 'arcface') {
 
   let dst = arcface_dst.map(row => [row[0] * ratio + diff, row[1] * ratio]);
 
-  const M = estimateSimilarityTransform(lmk, dst);
+  const M = estimateSimilarityTransform(lmk as unknown as number[][], dst);
   return M;
 
 }
 
-export function warpAffine(canvas, M, size, borderValue = 0) {
+export function warpAffine(canvas: Canvas, M: number[][], size: [number, number], borderValue: number = 0): Canvas {
   const ctx = canvas.getContext('2d');
   const [width, height] = size;
   const outCanvas = createCanvas(width, height);
@@ -246,7 +255,7 @@ export function warpAffine(canvas, M, size, borderValue = 0) {
   return outCanvas;
 }
 
-export function squareCrop(imgCanvas, S) {
+export function squareCrop(imgCanvas: Canvas, S: number): { canvas: Canvas, scale: number } {
   const w = imgCanvas.width;
   const h = imgCanvas.height;
 
@@ -273,7 +282,7 @@ export function squareCrop(imgCanvas, S) {
   return { canvas: detIm, scale };
 }
 
-export function transformPoints(pts, M) {
+export function transformPoints(pts: Point2D[] | Point3D[], M: number[][]): Point2D[] | Point3D[] {
   return pts.map(pt => {
     const x = pt[0], y = pt[1];
     return [
@@ -283,64 +292,64 @@ export function transformPoints(pts, M) {
   });
 }
 
-export function transformPoints3D(pts, M) {
+export function transformPoints3D(pts: Point3D[], M: number[][]): Point3D[] {
   const scale = Math.sqrt(M[0][0] ** 2 + M[0][1] ** 2);
   return pts.map(pt => {
-    const [x, y, z] = pt;
+    const [x, y, z] = pt as unknown as number[];
     const newX = M[0][0] * x + M[0][1] * y + M[0][2];
     const newY = M[1][0] * x + M[1][1] * y + M[1][2];
     return [newX, newY, z * scale];
   });
 }
 
-export function transformGeneric(pts, M) {
-  if (pts[0].length === 2) {
+export function transformGeneric(pts: Point2D[] | Point3D[], M: number[][]): Point2D[] | Point3D[] {
+  if ((pts[0] as unknown as number[]).length === 2) {
     return transformPoints(pts, M);
   } else {
-    return transformPoints3D(pts, M);
+    return transformPoints3D(pts as unknown as Point3D[], M);
   }
 }
 
 
-export function deg(rad) {
+export function deg(rad: number): number {
   return rad * (180 / Math.PI);
 }
 
-export function transform(data, center, outputSize, scale, rotation, invert = -1) {
+export function transform(data: { img: Canvas }, center: [number, number], outputSize: number, scale: number, rotation: number, invert: number = -1): [Canvas, number[][]] {
   const scale_ratio = scale;
-  const rot = math.unit(rotation, 'deg').toNumber('rad');  // Converte rotação para radianos
-  // Função para criar uma matriz de translação 3x3
-  const translate = (x, y) => [
+  const rot = math.unit(rotation, 'deg').toNumber('rad');  
+  
+  const translate = (x: number, y: number) => [
     [1, 0, x],
     [0, 1, y],
     [0, 0, 1],
   ];
 
-  // Função para criar uma matriz de rotação 3x3
-  const rotate = (angle) => [
+  
+  const rotate = (angle: number) => [
     [math.cos(angle), -math.sin(angle), 0],
     [math.sin(angle), math.cos(angle), 0],
     [0, 0, 1],
   ];
 
-  // Função para criar uma matriz de escala 3x3
-  const scaleTransform = (scale) => [
+  
+  const scaleTransform = (scale: number) => [
     [scale, 0, 0],
     [0, scale, 0],
     [0, 0, 1],
   ];
 
-  // Compondo as transformações
+  
   let transformMatrix = scaleTransform(scale_ratio);
   transformMatrix = math.multiply(translate(-center[0] * scale_ratio, -center[1] * scale_ratio), transformMatrix);
   transformMatrix = math.multiply(rotate(rot), transformMatrix);
   transformMatrix = math.multiply(translate(outputSize / 2, outputSize / 2), transformMatrix);
 
-  // Carregando a imagem para aplicar a transformação
+  
   const canvas = createCanvas(outputSize, outputSize);
   const ctx = canvas.getContext('2d');
 
-  // Configurando a transformação da matriz 3x3 para o contexto do canvas
+  
   ctx.setTransform(
     transformMatrix[0][0], transformMatrix[0][1],
     transformMatrix[1][0], transformMatrix[1][1] * invert,
@@ -352,9 +361,9 @@ export function transform(data, center, outputSize, scale, rotation, invert = -1
   return [canvas, transformMatrix];
 }
 
-export function transPoints2D(pts, M) {
+export function transPoints2D(pts: Point2D[], M: number[][]): Point2D[] {
   return pts.map(pt => {
-    const [x, y] = pt;
+    const [x, y] = pt as unknown as number[];
     return [
       M[0][0] * x + M[0][1] * y + M[0][2],
       M[1][0] * x + M[1][1] * y + M[1][2]
@@ -362,10 +371,10 @@ export function transPoints2D(pts, M) {
   });
 }
 
-export function transPoints3D(pts, M) {
+export function transPoints3D(pts: Point3D[], M: number[][]): Point3D[] {
   const scale = Math.sqrt(M[0][0] ** 2 + M[0][1] ** 2);
   return pts.map(pt => {
-    const [x, y, z] = pt;
+    const [x, y, z] = pt as unknown as number[];
     return [
       M[0][0] * x + M[0][1] * y + M[0][2],
       M[1][0] * x + M[1][1] * y + M[1][2],
@@ -374,39 +383,39 @@ export function transPoints3D(pts, M) {
   });
 }
 
-export function transPoints(pts, M) {
-  return pts[0].length === 2 ? transPoints2D(pts, M) : transPoints3D(pts, M);
+export function transPoints(pts: Point2D[] | Point3D[], M: number[][]): Point2D[] | Point3D[] {
+  return (pts[0] as unknown as number[]).length === 2 ? transPoints2D(pts, M) : transPoints3D(pts as unknown as Point3D[], M);
 }
 
-export function estimateAffineMatrix3D23D(X, Y) {
+export function estimateAffineMatrix3D23D(X: number[][], Y: number[][]): number[][] {
   const ones = math.ones(X.length, 1);
-  const X_homo = math.concat(X, ones, 1);  // n x 4
+  const X_homo = math.concat(X, ones, 1);  
 
-  const X_pseudo_inv = math.pinv(X_homo);  // Pseudoinversa de X_homo
+  const X_pseudo_inv = math.pinv(X_homo);  
 
   const P = math.multiply(X_pseudo_inv, Y);
-  return P
+  return P as unknown as number[][];
 }
 
-export function P2sRt(P) {
-  const t = P._data.map(row => row[2]);  // Corrigir para acessar a 3ª coluna de cada linha
+export function P2sRt(P: Matrix): { s: number, R: number[][], t: number[] } {
+  const t = (P as unknown as { _data: number[][] })._data.map(row => row[2]);  
 
-  const R1 = P._data[0].slice(0, 3);  // Corrigir para acessar corretamente os dados
-  const R2 = P._data[1].slice(0, 3);
+  const R1 = (P as unknown as { _data: number[][] })._data[0].slice(0, 3);  
+  const R2 = (P as unknown as { _data: number[][] })._data[1].slice(0, 3);
 
-  const normR1 = math.norm(R1);
-  const normR2 = math.norm(R2);
+  const normR1 = math.norm(R1) as unknown as number;
+  const normR2 = math.norm(R2) as unknown as number;
   const s = (normR1 + normR2) / 2.0;
 
-  const r1 = math.divide(R1, normR1);
-  const r2 = math.divide(R2, normR2);
+  const r1 = math.divide(R1, normR1) as unknown as number[];
+  const r2 = math.divide(R2, normR2) as unknown as number[];
   const r3 = math.cross(r1, r2);
 
   const R = [r1, r2, r3];
-  return { s, R, t };
+  return { s, R, t } as unknown as { s: number, R: number[][], t: number[] };
 }
 
-export function matrix2angle(R) {
+export function matrix2angle(R: number[][]): [number, number, number] {
   const sy = Math.sqrt(R[0][0] ** 2 + R[1][0] ** 2);
   let x, y, z;
 
@@ -423,8 +432,8 @@ export function matrix2angle(R) {
   return [deg(x), deg(y), deg(z)];
 }
 
-export async function normCrop(img, landmark, imageSize = 112, mode = 'arcface') {
-  const M = estimateNorm(landmark, imageSize, mode);
+export async function normCrop(img: { img: Canvas, open: (canvas: Canvas) => void }, landmark: Point2D[], imageSize: number = 112, mode: string = 'arcface'): Promise<Canvas> {
+  const M = estimateNorm(landmark as unknown as Point2D[][], imageSize, mode);
 
   const canvas = createCanvas(imageSize, imageSize);
   const ctx = canvas.getContext('2d');
@@ -434,8 +443,8 @@ export async function normCrop(img, landmark, imageSize = 112, mode = 'arcface')
   return canvas;
 }
 
-export async function normCrop2(img, landmark, imageSize = 112, mode = 'arcface') {
-  const M = estimateNorm(landmark, imageSize, mode);
+export async function normCrop2(img: { img: Canvas, open: (canvas: Canvas) => void }, landmark: Point2D[], imageSize: number = 112, mode: string = 'arcface'): Promise<[Canvas, Matrix]> {
+  const M = estimateNorm(landmark as unknown as Point2D[][], imageSize, mode);
 
   const canvas = createCanvas(imageSize, imageSize);
   const ctx = canvas.getContext('2d');
@@ -446,19 +455,23 @@ export async function normCrop2(img, landmark, imageSize = 112, mode = 'arcface'
   return [canvas, M];
 }
 
-
-export function performListMultiplication(list, number) {
-  const recursive = list => {
+export function performListMultiplication(list: unknown[], number: number): any[] {
+  const recursive = (list: unknown | unknown[]): unknown => {
     if (Array.isArray(list)) {
       return list.map(recursive);
     }
-    return list * number;
+    return (list as number) * number;
   }
 
-  return recursive(list);
+  return recursive(list) as unknown as number[];
 }
 
-export function tensorTo2DArray(tensor) {
+export type Tensor = {
+  cpuData: number[];
+  dims: [number, number];
+}
+
+export function tensorTo2DArray(tensor: Tensor): number[][] {
   const { cpuData, dims } = tensor;
   const [rows, cols] = dims;
   const matrix = [];
@@ -471,9 +484,9 @@ export function tensorTo2DArray(tensor) {
   return matrix;
 }
 
-export function tensorTo2DList(tensor) {
+export function tensorTo2DList(tensor: { cpuData: number[][] }): number[][] {
   const { cpuData } = tensor;
-  const matrix = [];
+  const matrix: number[][] = [];
 
   cpuData.forEach((row, i) => {
     matrix.push(row);

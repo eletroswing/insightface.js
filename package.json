@@ -1,11 +1,16 @@
 {
   "name": "deepfake",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "./dist/insightface/face_analysis.js",
+  "types": "./dist/types/insightface/face_analysis.d.ts",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "build": "tsc"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -13,6 +18,7 @@
   "dependencies": {
     "adm-zip": "^0.5.16",
     "axios": "^1.9.0",
+    "canvas": "^3.1.2",
     "glob": "^11.0.2",
     "mathjs": "^14.4.0",
     "ml-matrix": "^6.12.1",

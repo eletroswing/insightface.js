@@ -1,8 +1,8 @@
 import path from 'path';
 import fs from 'fs';
 
-export function getObject(name) {
-    const isPackaged = typeof process.pkg !== 'undefined';
+export function getObject(name: string): any | null {
+    const isPackaged = typeof (process as any).pkg !== 'undefined';
     const baseDir = isPackaged
         ? path.dirname(process.execPath)
         : "C:/Users/ytalo/deepfake/src/insightface";

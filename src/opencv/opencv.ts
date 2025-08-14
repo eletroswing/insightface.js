@@ -1,59 +1,66 @@
 import { loadImage as load, createCanvas } from 'canvas';
+import { Canvas, Image } from 'canvas';
 import * as math from 'mathjs';
 
-class DnnBlob {
-    constructor(data, shape) {
+export class DnnBlob {
+    data: number[];
+    shape: number[];
+
+    constructor(data: number[], shape: number[]) {
         this.data = data;
         this.shape = shape;
     }
 
-    get blob() {
+    get blob(): number[] {
         return this.data;
     }
 
-    get shaped() {
+    get shaped(): math.MathType | number[] {
         return math.reshape(this.data, this.shape);
     }
 }
 
 export class OpenCv {
+    img: Canvas | Image | null;
+    path: string | null;
+
     constructor() {
         this.img = null;
         this.path = null;
     }
 
-    open(canvas) {
+    open(canvas: Canvas): number[][][] {
         this.img = canvas;
         this.path = null;
 
         return this.canvasTo3DArray()
     }
 
-    async imread(path) {
+    async imread(path: string): Promise<number[][][]> {
         const loaded = await load(path);
         this.img = loaded;
         this.path = path;
         return this.canvasTo3DArray()
     }
 
-    get height() {
-        return this.img.height;
+    get height(): number {
+        return this.img!.height;
     }
 
-    get width() {
-        return this.img.width;
+    get width(): number {
+        return this.img!.width;
     }
 
-    resize(width, height) {
+    resize(width: number, height: number): number[][][] {
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(this.img, 0, 0, width, height);
+        ctx.drawImage(this.img!, 0, 0, width, height);
         this.img = canvas;
 
         return this.canvasTo3DArray();
     }
 
-    resizeBilinearBGR(dstW, dstH) {
+    resizeBilinearBGR(dstW: number, dstH: number): number[][][] {
         const src = this.canvasTo3DArray();
         const srcH = src.length;
         const srcW = src[0].length;
@@ -91,7 +98,7 @@ export class OpenCv {
         return out;
     }
 
-    blobFromImage(scalefactor = 1.0, size = [200, 200], mean = [0, 0, 0], swapRB = true) {
+    blobFromImage(scalefactor: number = 1.0, size: [number, number] = [200, 200], mean: [number, number, number] = [0, 0, 0], swapRB: boolean = true): DnnBlob {
         const [dstW, dstH] = size;
         const resized = this.resizeBilinearBGR(dstW, dstH);
 
@@ -111,14 +118,14 @@ export class OpenCv {
         return new DnnBlob(blob, [1, 3, dstH, dstW]);
     }
 
-    canvasTo3DArray() {
-        const width = this.img.width;
-        const height = this.img.height;
+    canvasTo3DArray(): number[][][] {
+        const width = this.img!.width;
+        const height = this.img!.height;
 
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
 
-        ctx.drawImage(this.img, 0, 0, width, height);
+        ctx.drawImage(this.img!, 0, 0, width, height);
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = imageData.data;
 
@@ -137,7 +144,7 @@ export class OpenCv {
 
         return array3D;
     }
-    warpAffine(matrix, dstW, dstH) {
+    warpAffine(matrix: number[][], dstW: number, dstH: number): number[][][] {
         const src = this.canvasTo3DArray();
         const srcH = src.length;
         const srcW = src[0].length;
@@ -194,7 +201,7 @@ export class OpenCv {
         return this.canvasTo3DArray();
     }
 
-    toString() {
-        return this.canvasTo3DArray()
+    toString(): string {
+        return this.canvasTo3DArray() as unknown as string;
     }
 }

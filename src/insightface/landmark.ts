@@ -1,25 +1,43 @@
 
-import ort from 'onnxruntime-node';
-import { reshape, multiply, inv } from 'mathjs';
-import { transform, transPoints, tensorTo2DArray } from './utils.js';
-import { getObject } from './data.js';
-import { estimateAffineMatrix3D23D, P2sRt, matrix2angle } from './utils.js';
+import ort, { InferenceSession } from 'onnxruntime-node';
+import { reshape, inv } from 'mathjs';
+import { Matrix as MatrixType } from 'ml-matrix';
 import protobuf from 'protobufjs';
 import fs from 'fs';
+import { Canvas } from 'canvas';
+
+import { estimateAffineMatrix3D23D, P2sRt, matrix2angle } from '@/insightface/utils.js';
+import { transform, transPoints, tensorTo2DArray, Tensor, Point2D } from '@/insightface/utils.js';
+import { getObject } from '@/insightface/data.js';
+import { Face } from '@/insightface/commom.js';
 
 export class Landmark {
-    constructor(modelFile, session = null) {
+    modelFile: string;
+    session: InferenceSession | null;
+    inputName!: string;
+    outputNames!: string[];
+    inputMean!: number;
+    inputStd!: number;
+    inputShape!: number[];
+    inputSize!: number[];
+    lmk_dim!: number;
+    lmk_num!: number;
+    meanLmk?: number[][];
+    requirePose!: boolean;
+    taskname!: string;
+
+    constructor(modelFile: string, session: InferenceSession | null = null) {
         if (!modelFile) throw new Error("Model file is required");
         this.modelFile = modelFile;
         this.session = session;
     }
 
-    async init() {
+    async init(): Promise<void> {
         this.session = await ort.InferenceSession.create(this.modelFile);
         const input = this.session.inputNames[0];
         const output = this.session.outputNames[0];
 
-        const outputShape = this.session.outputMetadata[0].shape;
+        const outputShape = (this.session.outputMetadata[0] as unknown as { shape: number[] }).shape;
 
         this.inputName = input;
         this.outputNames = [output];
@@ -29,7 +47,7 @@ export class Landmark {
 
         const modelBuffer = fs.readFileSync(this.modelFile);
         const decodedModel = onnxModel.decode(modelBuffer);
-        const graph = decodedModel.graph;
+        const graph = (decodedModel as unknown as { graph: any }).graph;
         var find_sub = false
         var find_mul = false
 
@@ -55,7 +73,7 @@ export class Landmark {
             this.inputStd = 128.0
         }
 
-        this.inputShape = this.session.inputMetadata[0].shape
+        this.inputShape = (this.session.inputMetadata[0] as unknown as { shape: number[] }).shape
         this.inputSize = this.inputShape
 
         if (outputShape[1] == 3309) {
@@ -71,21 +89,21 @@ export class Landmark {
         this.taskname = `landmark_${this.lmk_dim}d_${this.lmk_num}`;
     }
 
-    async get(imgCanvas, face) {
-        const bbox = face.bbox;
+    async get(imgCanvas: Canvas, face: Face): Promise<number[][]> {
+        const bbox = (face as unknown as { bbox: [number, number, number, number] }).bbox;
         const w = bbox[2] - bbox[0];
         const h = bbox[3] - bbox[1];
         const center = [(bbox[2] + bbox[0]) / 2, (bbox[3] + bbox[1]) / 2];
         const scale = this.inputSize[3] / (Math.max(w, h) * 1.5);
         const rotate = 0;
 
-        const [alignedCanvas, M] = transform(imgCanvas, center, this.inputSize[3], scale, rotate);
+        const [alignedCanvas, M] = transform(imgCanvas as unknown as {img: Canvas}, center as unknown as [number, number], this.inputSize[3], scale, rotate);
         const inputTensor = this.canvasToTensor(alignedCanvas);
 
         const feeds = { [this.inputName]: inputTensor };
-        const results = await this.session.run(feeds);
+        const results = await this.session!.run(feeds as unknown as InferenceSession.OnnxValueMapType);
 
-        let pred = tensorTo2DArray(results[this.outputNames[0]])[0];
+        let pred = tensorTo2DArray(results[this.outputNames[0]] as unknown as Tensor)[0];
 
         const dim = pred.length >= 3000 ? 3 : 2;
         pred = reshape(pred, [pred.length / dim, dim]);
@@ -94,68 +112,68 @@ export class Landmark {
             pred = pred.slice(-this.lmk_num);
         }
 
-        pred = pred.map(row => {
+        pred = (pred as unknown as number[][]).map(row => {
             row[0] += 1;
             row[1] += 1;
             return row;
-        });
+        }) as unknown as number[];
 
-        pred = pred.map(row => {
+        pred = (pred as unknown as number[][]).map(row => {
             row[0] *= Math.floor(this.inputSize[3] / 1.5);
             row[1] *= Math.floor(this.inputSize[3] / 2);
             return row;
-        });
+        }) as unknown as number[];
 
-        //fix x y
-        pred = pred.map(row => {
+        
+        pred = (pred as unknown as number[][]).map(row => {
             row[0] = row[0] - this.inputSize[3] / 2.5
             row[1] = row[1] 
             return row;
-        });
+        }) as unknown as number[];
 
-        if (pred[0].length === 3) {
-            pred = pred.map(row => {
+        if ((pred[0] as unknown as number[]).length === 3) {
+            pred = (pred as unknown as number[][]).map(row => {
                 row[2] *= Math.floor(this.inputSize[3] / 2);
                 return row;
-            });
+            }) as unknown as number[];
         }
         const IM = invertAffineTransform(M);
-        var aligned = transPoints(pred, IM);
+        var aligned = transPoints(pred as unknown as Point2D[], IM);
         aligned = aligned.map(row => {
-            row[0] = imgCanvas.width - row[0]; // Inverte o X
+            row[0] = imgCanvas.width - row[0]; 
             return row;
         });
 
-        face[this.taskname] = aligned;
+        (face as unknown as { [key: string]: any })[this.taskname] = aligned;
         if (this.requirePose) {
-            const P = estimateAffineMatrix3D23D(this.meanLmk, aligned);
-            const { R } = P2sRt(P);
+            const P = estimateAffineMatrix3D23D(this.meanLmk as unknown as number[][], aligned as unknown as number[][]);
+            const { R } = P2sRt(P as unknown as MatrixType );
             const [rx, ry, rz] = matrix2angle(R);
-            face.pose = [rx, ry, rz];
+            (face as unknown as { pose: [number, number, number] }).pose = [rx, ry, rz];
         }
 
-        return aligned;
+        return aligned as unknown as number[][];
     }
 
-    async prepare(ctxId) {
-        //TODO -> do nothing, is already on cpu
+    async prepare(ctxId: number): Promise<void> {
+        
     }
 
-    canvasToTensor(img) {
+    canvasToTensor(img: Canvas): Tensor {
         const { width, height } = img;
         const ctx = img.getContext('2d');
         const data = ctx.getImageData(0, 0, width, height).data;
         const floatArray = new Float32Array(width * height * 3);
         for (let i = 0; i < width * height; i++) {
-            floatArray[i * 3] = data[i * 4];     // R
-            floatArray[i * 3 + 1] = data[i * 4 + 1]; // G
-            floatArray[i * 3 + 2] = data[i * 4 + 2]; // B
+            floatArray[i * 3] = data[i * 4];     
+            floatArray[i * 3 + 1] = data[i * 4 + 1]; 
+            floatArray[i * 3 + 2] = data[i * 4 + 2]; 
         }
-        return new ort.Tensor('float32', floatArray, [1, 3, height, width]);
+        return new ort.Tensor('float32', floatArray, [1, 3, height, width]) as unknown as Tensor;
     }
 }
 
-function invertAffineTransform(M) {
+function invertAffineTransform(M: number[][]): number[][] {
     const A = [
         [M[0][0], M[0][1], M[0][2]],
         [M[1][0], M[1][1], M[1][2]],

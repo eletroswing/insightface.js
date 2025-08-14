@@ -1,27 +1,38 @@
-import { getModel } from "./model_zoo.js";
-import { ensureAvailable } from "./utils.js";
-import { Face } from "./commom.js";
 import * as fs from 'fs';
 import * as canvas from 'canvas';
-
 import "onnxruntime-node";
 import path from "path";
-import {OpenCv} from "../opencv/opencv.js";
+
+import { getModel } from "@/insightface/model_zoo.js";
+import { ensureAvailable } from "@/insightface/utils.js";
+import { Face } from "@/insightface/commom.js";
+import {OpenCv} from "@/opencv/opencv.js";
+import { RetinaFace } from "@/insightface/retinaface.js";
 
 export class FaceAnalysis {
-    constructor(name = 'buffalo_l', root = '~/.insightface', allowedModules = null, options = {}) {
+    name: string;
+    root: string;
+    allowedModules: string[] | null;
+    options: any;
+    models!: Record<string, any>;
+    modelDir!: string;
+    detModel!: RetinaFace;
+    detSize!: [number, number];
+    detThresh?: number;
+
+    constructor(name: string = 'buffalo_l', root: string = '~/.insightface', allowedModules: string[] | null = null, options: any = {}) {
         this.name = name;
         this.root = root;
         this.allowedModules = allowedModules;
         this.options = options;
     }
     
-    async init() {
+    async init(): Promise<void> {
         this.models = {};
         this.modelDir = await ensureAvailable('models', this.name, this.root);
         const onnxFiles = fs.readdirSync(this.modelDir).filter(file => file.endsWith('.onnx')).sort().map(file => path.join(this.modelDir, file));
         for (const onnxFile of onnxFiles) {
-            const model = await getModel(onnxFile, this.options);
+            const model = await getModel(onnxFile, this.options) as unknown as { taskname: string, inputShape: number[], inputMean: number, inputStd: number };
 
             if (!model) {
                 console.log('model not recognized:', onnxFile);
@@ -41,7 +52,7 @@ export class FaceAnalysis {
         this.detModel = this.models['detection'];
     }
 
-    async prepare(ctxId = 0, detSize = [640, 640], detThresh = 0.5) {
+    async prepare(ctxId: number = 0, detSize: [number, number] = [640, 640], detThresh: number = 0.5): Promise<void> {
         this.detThresh = detThresh;
         this.detSize = detSize;
         console.log('set det-size:', detSize);
@@ -54,9 +65,10 @@ export class FaceAnalysis {
             }
         }
     }
-    async get(currentImg, maxNum = 0, detMetric = 'default') {
+
+    async get(currentImg: string | canvas.Canvas, maxNum: number = 0, detMetric: string = 'default'): Promise<Face[]> {
         const img = new OpenCv();
-        await img.imread(currentImg);
+        await img.imread(currentImg as unknown as string);
         const { bboxes, kpss } = await this.detModel.detect(img, maxNum, detMetric);
         if (bboxes.length === 0) return [];
 
@@ -84,24 +96,23 @@ export class FaceAnalysis {
         return faces;
     }
 
-    // Função para desenhar bounding boxes e pontos faciais utilizando canvas
-    drawOn(img, faces) {
+    drawOn(img: canvas.Canvas, faces: Face[]): canvas.Canvas {
         const imgCanvas = canvas.createCanvas(img.width, img.height);
         const ctx = imgCanvas.getContext('2d');
 
-        // Desenha a imagem no canvas
+        
         ctx.drawImage(img, 0, 0);
 
         for (const face of faces) {
-            const [x1, y1, x2, y2] = face.bbox.map(Math.round);
+            const [x1, y1, x2, y2] = (face as unknown as { bbox: [number, number, number, number] }).bbox.map(Math.round);
 
-            // Desenha o retângulo (bounding box) ao redor do rosto
+            
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-            if (face.kps) {
-                (face.kps).forEach(([x, y], idx) => {
+            if ((face as unknown as { kps: number[][] }).kps) {
+                ((face as unknown as { kps: number[][] }).kps).forEach(([x, y], idx) => {
                     const color = (idx === 0 || idx === 3) ? 'green' : 'blue';
                     ctx.fillStyle = color;
                     ctx.beginPath();
@@ -110,10 +121,10 @@ export class FaceAnalysis {
                 });
             }
 
-            if (face.gender !== undefined && face.age !== undefined) {
+            if (face.gender !== undefined && (face as unknown as { age: number }).age !== undefined) {
                 ctx.fillStyle = 'green';
                 ctx.font = '12px Arial';
-                ctx.fillText(`${face.gender},${face.age}`, x1, y1 - 5);
+                ctx.fillText(`${face.gender},${(face as unknown as { age: number }).age}`, x1, y1 - 5);
             }
         }
 
