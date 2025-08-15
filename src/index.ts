@@ -1,0 +1,1 @@
+export { FaceAnalysis } from './insightface/face_analysis.js';
